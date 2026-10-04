@@ -7,7 +7,6 @@ A complete, self-hosted watch party solution that streams local video files sync
 ## Stack Architecture
 
 * **[OpenTogetherTube](https://github.com/dyc3/opentogethertube)**: Open-source Node.js web application for synchronized video playback and real-time room chat.
-* **[PostgreSQL](https://www.postgresql.org/) & [Redis](https://redis.io/)**: High-performance database and caching backends for managing rooms, users, and synchronization state.
 * **[Nginx Video Server](https://nginx.org/)**: Light, event-driven web server configured with CORS headers to stream video files directly from `~/Videos`.
 * **[Tailscale Funnel](https://tailscale.com/kb/1223/funnel)**: Zero-config mesh network powered by [WireGuard®](https://www.wireguard.com/) providing secure, persistent public HTTPS ingress tunnels that bypass CGNAT and home firewalls.
 
