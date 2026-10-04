@@ -139,7 +139,7 @@ If the browser blocks video fetching due to Cross-Origin Resource Sharing rules:
 
 ## Acknowledgments & Credits
 
-This project relies on open-source software and networking tools:
+This cannot even be considered a project, it is a configuration set of open-source software and networking tools:
 
 * **[OpenTogetherTube](https://github.com/dyc3/opentogethertube)** — Created and maintained by [dyc3](https://github.com/dyc3). OpenTogetherTube provides synchronized video playback, user room management, and real-time chat capabilities.
 * **[Tailscale](https://tailscale.com/)** — Developed by Tailscale Inc. Tailscale simplifies secure networking using WireGuard®, enabling peer-to-peer mesh connections and public ingress via Tailscale Funnel without manual port forwarding.
