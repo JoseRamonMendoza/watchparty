@@ -126,7 +126,7 @@ SESSION_SECRET=$(openssl rand -hex 40)  # 80 characters
 
 # 3. Create production.toml
 cat << EOF > production.toml
-hostname="${MAGIC_DNS}:8080"
+hostname="${MAGIC_DNS}"
 
 log = { level="info" }
 
@@ -188,8 +188,8 @@ volumes:
 EOF
 
 echo "==> [7/9] Setting up persistent Tailscale Funnels in background..."
-sudo tailscale funnel --bg 8080
-sudo tailscale funnel --bg --https=8443 8081
+sudo tailscale serve --bg 8080
+sudo tailscale serve --bg --https=8443 8081
 
 echo "==> [8/9] Launching Docker container stack..."
 docker compose up -d
