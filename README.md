@@ -14,25 +14,56 @@ A complete, self-hosted watch party solution that streams local video files sync
 
 ## Prerequisites
 
-* A Linux host operating system ([Fedora](https://fedoraproject.org/) or [Debian](https://www.debian.org/)/[Ubuntu](https://ubuntu.com/) derivative).
-* A free [Tailscale Account](https://tailscale.com/).
-* A regular Linux user account with `sudo` administrative privileges.
-* [FFmpeg](https://ffmpeg.org/) installed for media transcoding (`sudo dnf install ffmpeg` or `sudo apt install ffmpeg`).
+Before running the setup, ensure your host environment meets the following requirements:
+
+1. **Operating System:**
+   - A Linux host operating system ([Fedora](https://fedoraproject.org/) or [Debian](https://www.debian.org/)/[Ubuntu](https://ubuntu.com/)).
+
+2. **User Privileges:**
+   - A standard Linux user account with `sudo` administrative privileges.
+
+3. **Tailscale Account & Funnel Access:**
+   - A free [Tailscale Account](https://tailscale.com/).
+   - Tailscale installed and logged in on the host machine.
+   - Tailscale Funnel enabled in your Tailnet access control policy (ACL):
+     Ensure your `tailnet` policy grants `"funnel"` rights to your node's tag or user.
+
+4. **Docker & Docker Compose:**
+   - Docker Engine and the Docker Compose plugin (`docker compose`) installed and running.
+   - Your user added to the `docker` group (`sudo usermod -aG docker $USER`).
+
+5. **Full FFmpeg Installation (with `libx264` and `ffprobe`):**
+   Web streaming requires the patent-supported `libx264` encoder.
+
+   - **Debian / Ubuntu:**
+     ```bash
+     sudo apt update && sudo apt install -y ffmpeg
+     ```
+
+   - **Fedora:**
+     *(Fedora's default `ffmpeg-free` package lacks `libx264`. You must enable RPM Fusion to install the full multimedia build)*:
+     ```bash
+     # 1. Enable RPM Fusion repositories
+     sudo dnf install -y \
+       [https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm](https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm) -E %fedora).noarch.rpm \
+       [https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm](https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm) -E %fedora).noarch.rpm
+
+     # 2. Swap ffmpeg-free with full ffmpeg
+     sudo dnf swap -y ffmpeg-free ffmpeg --allowerasing
+     ```
 
 ---
 
 ## Quick Start (Automated Setup)
 
-1. Save your `setup_watchparty.sh` script inside your project directory (e.g., `~/dev/watchparty/setup_watchparty.sh`).
-2. Make the setup script executable:
+1. Make the setup script executable:
    ```bash
    chmod +x setup_watchparty.sh
    ```
-3. Run the setup script:
+2. Run the setup script:
    ```bash
    ./setup_watchparty.sh
    ```
-   *The script automatically prompts for your OS profile (Debian/Ubuntu vs. Fedora), installs dependencies, enables systemd services on boot, clones the OpenTogetherTube repository, generates secure secrets, configures `production.toml` and `nginx.conf`, provisions background Tailscale Funnels, launches the Docker stack, and runs database migrations.*
 
 ---
 
@@ -53,51 +84,83 @@ Containers are configured with `restart: "no"` so they only run when you explici
 
 ---
 
-## Universal Video Encoding Rules
+### Universal Video Encoding Rules
+Web browsers require specific video codecs for cross-platform playback across Windows, macOS, iOS, Android, and Linux. Non-standard profiles (such as 10-bit color, H.265/HEVC, AV1, or 5.1/7.1 surround sound) cause browser decode errors (such as NS_ERROR_DOM_MEDIA_DECODE_ERR) or black screens.
 
-Web browsers require specific video codecs for cross-platform playback across Windows, macOS, iOS, Android, and Linux. Non-standard profiles (such as 10-bit color, H.265/HEVC, or 5.1 surround sound) cause browser decode errors (like `NS_ERROR_DOM_MEDIA_DECODE_ERR`) or black screens.
+Mandatory Encoding Profile
+Container: MP4 (.mp4)
 
-### Mandatory Encoding Profile
+Video Codec: H.264 / AVC 8-bit (libx264, yuv420p)
 
-* **Container:** MP4 (`.mp4`)
-* **Video Codec:** H.264 / AVC (`libx264`)
-* **Color Space / Pixel Format:** 8-bit `yuv420p`
-* **Audio Codec:** 2-Channel Stereo AAC (`-c:a aac -ac 2`)
-* **HTTP Fast-Start:** `-movflags +faststart`
+Audio Codec: 2-Channel Stereo AAC (-c:a aac -ac 2 -b:a 192k)
 
-### Universal FFmpeg Conversion Command
+HTTP Fast-Start: -movflags +faststart (places stream index headers at the start of the file for instant buffering)
 
-Run this command on any video or `.mkv` file before streaming:
+### Video Transcoding & Verification (`transcode.sh`)
 
+Use the bundled `transcode.sh` utility to convert any video format (`.mkv`, `.avi`, `.mov`, `.webm`, `.mp4`) into an 8-bit H.264/AAC stereo MP4 optimized for browser streaming. The script automatically validates output compatibility after conversion, and can also be used standalone to inspect existing video files.
+
+#### CLI Options
+
+| Flag | Argument | Description |
+| :--- | :--- | :--- |
+| `-i` | `<file>` | Path to the input video file (required for transcoding). |
+| `-o` | `<file>` | Custom destination path (default: `<input_name>_web.mp4`). |
+| `-s` | `<file>` | Burn an external subtitle file (`.srt`, `.ass`, `.vtt`) into the video. |
+| `-e` | `[index]` | Burn an internal/embedded subtitle stream (default: `0` for first track). |
+| `-c` | `<file>` | Inspect an existing video file for web compatibility without encoding. |
+| `-h` | None | Display usage instructions and examples. |
+
+---
+
+#### Usage Examples
+
+**1. Standard Conversion (Auto-Verified)**
+Converts the input file and outputs `<input_name>_web.mp4`, running compatibility verification upon completion:
 ```bash
-ffmpeg -i ~/Videos/input.mkv \
-  -c:v libx264 -pix_fmt yuv420p -preset fast -crf 22 \
-  -c:a aac -ac 2 -b:a 192k \
-  -movflags +faststart \
-  ~/Videos/output.mp4
+./transcode.sh -i ~/Videos/input.mkv
 ```
 
-### Burning Subtitles Into Video
-
-To hardcode soft or external subtitles (`.srt` / `.ass`) into the video stream while preserving web compatibility:
-
+**2. Custom Output Destination**
 ```bash
-ffmpeg -i ~/Videos/input.mkv \
-  -vf "subtitles=/path/to/subtitles.srt" \
-  -c:v libx264 -pix_fmt yuv420p -preset fast -crf 22 \
-  -c:a aac -ac 2 -b:a 192k \
-  -movflags +faststart \
-  ~/Videos/output_subtitled.mp4
+./transcode.sh -i ~/Videos/input.mkv -o ~/Videos/party_stream.mp4
 ```
 
-### Verifying File Compatibility
-
-Check that an encoded file matches web standards:
-
+**3. Burn External Subtitles**
+Hardcodes `.srt` or `.ass` subtitle tracks directly into the video stream:
 ```bash
-ffprobe -v error -show_entries stream=codec_name,pix_fmt,channels -of default=noprintwrappers=1 ~/Videos/output.mp4
+./transcode.sh -i ~/Videos/input.mkv -s ~/Videos/subtitles.srt
 ```
-*Expected output: `h264`, `yuv420p`, `aac`, `2`.*
+
+**4. Burn Embedded Subtitles**
+Hardcodes subtitles already contained inside the container:
+```bash
+# Burn first embedded subtitle stream (index 0)
+./transcode.sh -i ~/Videos/input.mkv -e
+
+# Burn specific embedded subtitle stream (e.g., track 1)
+./transcode.sh -i ~/Videos/input.mkv -e 1
+```
+
+**5. Standalone Compatibility Check**
+Verify whether any existing video file on your system meets browser streaming requirements without modifying it:
+```bash
+./transcode.sh -c ~/Videos/output_web.mp4
+```
+
+*Expected output on success:*
+```text
+==================================================
+ Verifying Web Compatibility: output_web.mp4
+==================================================
+  • Video Codec:  h264       (Required: h264)
+  • Pixel Format: yuv420p    (Required: yuv420p)
+  • Audio Codec:  aac        (Required: aac)
+  • Channels:     2          (Required: 2)
+--------------------------------------------------
+ Status: READY (Matches universal web streaming standard)
+==================================================
+```
 
 ---
 
