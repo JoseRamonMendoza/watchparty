@@ -17,7 +17,7 @@ A complete, self-hosted watch party solution that streams local video files sync
 Before running the setup, ensure your host environment meets the following requirements:
 
 1. **Operating System:**
-   - A Linux host operating system ([Fedora](https://fedoraproject.org/) or [Debian](https://www.debian.org/)/[Ubuntu](https://ubuntu.com/)).
+   - A Linux host operating system ([Fedora](https://fedoraproject.org/).
 
 2. **User Privileges:**
    - A standard Linux user account with `sudo` administrative privileges.
@@ -34,11 +34,6 @@ Before running the setup, ensure your host environment meets the following requi
 
 5. **Full FFmpeg Installation (with `libx264` and `ffprobe`):**
    Web streaming requires the patent-supported `libx264` encoder.
-
-   - **Debian / Ubuntu:**
-     ```bash
-     sudo apt update && sudo apt install -y ffmpeg
-     ```
 
    - **Fedora:**
      *(Fedora's default `ffmpeg-free` package lacks `libx264`. You must enable RPM Fusion to install the full multimedia build)*:
