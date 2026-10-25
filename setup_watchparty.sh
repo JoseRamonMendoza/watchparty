@@ -12,26 +12,26 @@ echo "==> [1/8] Installing core dependencies..."
 # Install dependencies if not pressent
 for pkg in curl git openssl jq ca-certificates; do
   rpm -q "$pkg" &>/dev/null || (echo "==> Installing $pkg..." && sudo dnf install -y "$pkg")
-done   
+done
 
-if ! command -v docker &> /dev/null; then
+if ! command -v docker &>/dev/null; then
   echo "==> Installing Docker..."
   sudo dnf install -y docker docker-compose
   sudo usermod -aG docker "$USER"
 fi
 
-if ! command -v tailscale &> /dev/null; then
+if ! command -v tailscale &>/dev/null; then
   echo "==> Installing Tailscale..."
   curl -fsSL https://tailscale.com/install.sh | sh
 fi
 
 echo "==> [2/8] Enabling Docker and Tailscale services on system boot..."
 for svc in docker tailscaled; do
-    systemctl is-enabled "$svc" &>/dev/null || sudo systemctl enable --now "$svc"
-done   
+  systemctl is-enabled "$svc" &>/dev/null || sudo systemctl enable --now "$svc"
+done
 
 echo "==> [3/8] Verifying Tailscale authentication..."
-if ! tailscale status &> /dev/null; then
+if ! tailscale status &>/dev/null; then
   echo "Tailscale is not connected. Authenticating now..."
   sudo tailscale up
 fi
@@ -55,9 +55,10 @@ fi
 echo "==> [5/8] Generating configuration files..."
 
 # 1. Create nginx.conf
-cat << 'EOF' > nginx.conf
+if [ ! -f nginx.conf ]; then
+  cat <<'EOF' >nginx.conf
 server {
-    listen 80;
+    listen 8081;
     location / {
         root /usr/share/nginx/html;
         autoindex on;
@@ -81,13 +82,15 @@ server {
     }
 }
 EOF
+fi
 
 # 2. Generate random secrets
-API_KEY=$(openssl rand -hex 20)        # 40 characters
-SESSION_SECRET=$(openssl rand -hex 40)  # 80 characters
+if [ ! -f production.toml]; then
+  API_KEY=$(openssl rand -hex 20)        # 40 characters
+  SESSION_SECRET=$(openssl rand -hex 40) # 80 characters
 
-# 3. Create production.toml
-cat << EOF > production.toml
+  # 3. Create production.toml
+  cat <<EOF >production.toml
 hostname="${MAGIC_DNS}"
 
 log = { level="info" }
@@ -98,9 +101,13 @@ session_secret="${SESSION_SECRET}"
 [info_extractor.youtube]
 api_key=""
 EOF
+else
+  # Update hostname dynamically if MagicDNS changed, preserving keys
+  sed -i "s/^hostname=.*/hostname=\"${MAGIC_DNS}\"/" production.toml
+fi
 
 # 4. Create docker-compose.yml
-cat << EOF > docker-compose.yml
+cat <<EOF >docker-compose.yml
 services:
   db:
     image: postgres:15-alpine
@@ -155,7 +162,7 @@ echo "==> [7/8] Launching Docker container stack..."
 docker compose up -d
 
 echo "==> [8/8] Waiting for PostgreSQL database initialization..."
-until docker compose exec -T db pg_isready -U ott_user -d opentogethertube &> /dev/null; do
+until docker compose exec -T db pg_isready -U ott_user -d opentogethertube &>/dev/null; do
   echo "Database is starting up... waiting 3 seconds."
   sleep 3
 done
