@@ -7,68 +7,30 @@ if [ "$EUID" -eq 0 ]; then
   exit 1
 fi
 
-echo "=========================================="
-echo " WatchParty Setup Script"
-echo "=========================================="
-echo "Select your target operating system:"
-echo "1) Debian / Ubuntu base (uses apt)"
-echo "2) Fedora base (uses dnf)"
-echo "3) Auto-detect OS"
-read -r -p "Enter choice [1-3] (default: 3): " choice
+echo "==> [1/8] Installing core dependencies..."
 
-case "${choice:-3}" in
-  1)
-    DISTRO="debian"
-    ;;
-  2)
-    DISTRO="fedora"
-    ;;
-  3|*)
-    if [ -f /etc/os-release ]; then
-      . /etc/os-release
-      if [[ "${ID:-}" == "fedora" ]] || [[ "${ID_LIKE:-}" == *"fedora"* ]]; then
-        DISTRO="fedora"
-      elif [[ "${ID:-}" =~ ^(debian|ubuntu|pop|mint)$ ]] || [[ "${ID_LIKE:-}" =~ (debian|ubuntu) ]]; then
-        DISTRO="debian"
-      else
-        echo "Could not auto-detect distribution. Defaulting to Debian/Ubuntu."
-        DISTRO="debian"
-      fi
-    else
-      DISTRO="debian"
-    fi
-    ;;
-esac
+# Install dependencies if not pressent
+for pkg in curl git openssl jq ca-certificates; do
+  rpm -q "$pkg" &>/dev/null || (echo "==> Installing $pkg..." && sudo dnf install -y "$pkg")
+done   
 
-echo "==> Operating system profile selected: ${DISTRO}"
-
-echo "==> [1/9] Installing core dependencies..."
-if [ "$DISTRO" = "debian" ]; then
-  sudo apt-get update
-  sudo apt-get install -y curl git openssl jq ca-certificates gnupg
-  if ! command -v docker &> /dev/null; then
-    sudo apt-get install -y docker.io docker-compose-v2
-    sudo usermod -aG docker "$USER"
-  fi
-elif [ "$DISTRO" = "fedora" ]; then
-  sudo dnf install -y curl git openssl jq ca-certificates
-  if ! command -v docker &> /dev/null; then
-    sudo dnf install -y docker docker-compose
-    sudo usermod -aG docker "$USER"
-  fi
+if ! command -v docker &> /dev/null; then
+  echo "==> Installing Docker..."
+  sudo dnf install -y docker docker-compose
+  sudo usermod -aG docker "$USER"
 fi
 
-# Install Tailscale if not present
 if ! command -v tailscale &> /dev/null; then
-  echo "==> [2/9] Installing Tailscale..."
+  echo "==> Installing Tailscale..."
   curl -fsSL https://tailscale.com/install.sh | sh
 fi
 
-echo "==> [3/9] Enabling Docker and Tailscale services on system boot..."
-sudo systemctl enable --now docker
-sudo systemctl enable --now tailscaled
+echo "==> [2/8] Enabling Docker and Tailscale services on system boot..."
+for svc in docker tailscaled; do
+    systemctl is-enabled "$svc" &>/dev/null || sudo systemctl enable --now "$svc"
+done   
 
-echo "==> [4/9] Verifying Tailscale authentication..."
+echo "==> [3/8] Verifying Tailscale authentication..."
 if ! tailscale status &> /dev/null; then
   echo "Tailscale is not connected. Authenticating now..."
   sudo tailscale up
@@ -82,7 +44,7 @@ if [ -z "$MAGIC_DNS" ] || [ "$MAGIC_DNS" = "null" ]; then
 fi
 echo "Detected MagicDNS domain: ${MAGIC_DNS}"
 
-echo "==> [5/9] Preparing directory structure and repository source..."
+echo "==> [4/8] Preparing directory structure and repository source..."
 mkdir -p "$HOME/Videos"
 
 if [ ! -d "ott-source" ]; then
@@ -90,7 +52,7 @@ if [ ! -d "ott-source" ]; then
   git clone https://github.com/dyc3/opentogethertube.git ott-source
 fi
 
-echo "==> [6/9] Generating configuration files..."
+echo "==> [5/8] Generating configuration files..."
 
 # 1. Create nginx.conf
 cat << 'EOF' > nginx.conf
@@ -143,6 +105,7 @@ services:
   db:
     image: postgres:15-alpine
     restart: "no"
+    network_mode: "host"
     environment:
       POSTGRES_USER: ott_user
       POSTGRES_PASSWORD: ott_password
@@ -153,6 +116,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: "no"
+    network_mode: "host"
 
   opentogethertube:
     build:
@@ -161,15 +125,12 @@ services:
       args:
         DEPLOY_TARGET: base
     restart: "no"
-    ports:
-      - "8080:8080"
+    network_mode: "host"
     environment:
-      - DATABASE_URL=postgres://ott_user:ott_password@db:5432/opentogethertube
-      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgres://ott_user:ott_password@127.0.0.1:5432/opentogethertube
+      - REDIS_URL=redis://127.0.0.1:6379
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro,z
       - ./production.toml:/app/env/production.toml:ro,z
-      - ${HOME}/Videos:/usr/share/nginx/html:ro,z
     depends_on:
       - db
       - redis
@@ -177,24 +138,23 @@ services:
   videoserver:
     image: nginx:alpine
     restart: "no"
-    ports:
-      - "8081:80"
+    network_mode: "host"
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ${HOME}/Videos:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro,z
+      - ${HOME}/Videos:/usr/share/nginx/html:ro,z
 
 volumes:
   postgres-data:
 EOF
 
-echo "==> [7/9] Setting up persistent Tailscale Funnels in background..."
+echo "==> [6/8] Setting up persistent Tailscale Funnels in background..."
 sudo tailscale serve --bg 8080
 sudo tailscale serve --bg --https=8443 8081
 
-echo "==> [8/9] Launching Docker container stack..."
+echo "==> [7/8] Launching Docker container stack..."
 docker compose up -d
 
-echo "==> [9/9] Waiting for PostgreSQL database initialization..."
+echo "==> [8/8] Waiting for PostgreSQL database initialization..."
 until docker compose exec -T db pg_isready -U ott_user -d opentogethertube &> /dev/null; do
   echo "Database is starting up... waiting 3 seconds."
   sleep 3
@@ -205,7 +165,6 @@ docker compose exec -T -w /app opentogethertube npm run db:migrate
 
 echo ""
 echo "========================================================================="
-echo " Automation Complete! (${DISTRO} profile)"
 echo " MagicDNS Domain : ${MAGIC_DNS}"
 echo " App URL          : https://${MAGIC_DNS}/"
 echo " Video Stream URL : https://${MAGIC_DNS}:8443/<video-file.mp4>"

@@ -47,7 +47,7 @@ Containers are configured with `restart: "no"` so they only run when you explici
 | **Start WatchParty Stack** | `docker compose start` |
 | **Stop WatchParty Stack** | `docker compose stop` |
 | **Check Container Status** | `docker compose ps` |
-| **Check Active Funnels** | `tailscale funnel status` |
+| **Check Active Funnels** | `tailscale serve status` |
 | **View App Logs** | `docker compose logs -f opentogethertube` |
 | **View Video Server Logs** | `docker compose logs -f videoserver` |
 
@@ -127,7 +127,7 @@ If the browser blocks video fetching due to Cross-Origin Resource Sharing rules:
 ### Friends Cannot Connect
 1. Verify Tailscale Funnels are active in the background:
    ```bash
-   tailscale funnel status
+   tailscale serve status
    ```
 2. If firewall blocks ports locally on Fedora:
    ```bash
